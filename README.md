@@ -156,7 +156,7 @@ Exemplo de planilhas reais e o tipo usado:
 | Planilha | Tipo | Observação |
 |---|---|---|
 | `1_territorial` | `territorial` | A inscrição atual é a `Inscricao_imobiliaria_InLoco` (termina em `.0`; terminava em `.1` quando era predial) |
-| `2_novo_padrao` | `completa` | Inscrição cadastral e in loco iguais |
+| `2_novo_padrao` | **`sem_unidades`** | Cada linha é a unidade **principal**, com o padrão novo e **sem área construída**. O simulador busca na Betha a área da principal e todas as demais unidades do imóvel. O padrão novo vale **só na principal**; as demais unidades mantêm o padrão da Betha (regra **pendente de revisão**). Com `completa` o imóvel seria calculado sem edificação (alíquota de terreno) |
 | `3_edificacoes` | `completa` | `Inscricao_imobiliaria` é a inscrição englobada da principal e se repete nas unidades; `Inscricao_imobiliaria_InLoco` identifica as **unidades novas** achadas em campo, ainda sem código/ID no sistema |
 
 ---
@@ -214,7 +214,7 @@ Execute **dentro da pasta do projeto** (onde estão `pgv/pgp/aliquota`):
 
 ```bash
 python simulacaoIPTU.py --tipo territorial --entrada entradas/1_territorial.xlsx --saida 1_territorial_SIMULADO.xlsx
-python simulacaoIPTU.py --tipo completa    --entrada entradas/2_novo_padrao.xlsx --saida 2_novo_padrao_SIMULADO.xlsx
+python simulacaoIPTU.py --tipo sem_unidades --entrada entradas/2_novo_padrao.xlsx --saida 2_novo_padrao_SIMULADO.xlsx
 python simulacaoIPTU.py --tipo completa    --entrada entradas/3_edificacoes.xlsx --saida 3_edificacoes_SIMULADO.xlsx
 ```
 
@@ -272,7 +272,7 @@ Metodologia de correção dos valores (IPCA) e regra de arredondamento: ver `LEI
 |---|---|
 | `N ID(s) nao encontrados na Betha` | IDs da planilha que não existem no sistema — conferir a planilha |
 | `secao X fora da PGV` | Seção sem valor na PGV; usado o valor único da quadra, se houver. Ver `Observacoes` |
-| `unidade N sem m2 na PGP (material/tipo/padrao)` | Combinação inexistente na PGP — a unidade fica sem valor de edificação |
+| `unidade N sem m2 na PGP (material/tipo/padrao)` | Combinação inexistente na PGP — a unidade fica sem valor de edificação (ex.: piscina sem material cadastrado na Betha) |
 | `planilha territorial, mas a Betha tem valor venal de edificacao` | Imóvel tratado como territorial ainda tem edificação lançada no sistema |
 | `Secao/Inscricao planilha X x Betha Y` | Divergência entre planilha e cadastro (a planilha prevalece) |
 | `layout de saida do modelo indisponivel` | Sem `Calculo IPTU_CAMPOS_SCRIPT.xlsx`; usado o layout padrão |
