@@ -158,6 +158,8 @@ Exemplo de planilhas reais e o tipo usado:
 |---|---|---|
 | `1_territorial` | `territorial` | A inscrição atual é a `Inscricao_imobiliaria_InLoco` (termina em `.0`; terminava em `.1` quando era predial) |
 | `2_novo_padrao` | **`novo_padrao`** | Cada linha é a unidade **principal**, com o padrão novo e **sem área construída**. O simulador busca na Betha a área da principal e todas as demais unidades do imóvel, e aplica o padrão novo da principal em **todas as unidades**. Com `completa` o imóvel seria calculado sem edificação (alíquota de terreno) |
+
+**Padrão diferente por unidade (`novo_padrao`):** para dar padrões diferentes às unidades do mesmo imóvel, inclua na planilha **uma linha por unidade** (identificada pelo `Codigo` ou `ID` da unidade) com o seu `Padrao_Digitado` — ex.: a casa como `LUXO` e a edícula como `FINO`. O padrão informado na linha da unidade prevalece. O padrão da principal só é aplicado às unidades que **não estão na planilha** ou que estão com o padrão **vazio**. A saída continua com uma linha por imóvel principal.
 | `3_edificacoes` | `completa` | `Inscricao_imobiliaria` é a inscrição englobada da principal e se repete nas unidades; `Inscricao_imobiliaria_InLoco` identifica as **unidades novas** achadas em campo, ainda sem código/ID no sistema |
 
 ---

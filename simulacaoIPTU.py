@@ -262,11 +262,14 @@ def calcular(df, tipo):
     df["Codigo_Principal"] = (df["ChaveImovel"].map(cod_por_id)
                               .fillna(df["ChaveImovel"].map(cod_da_principal)).fillna(""))
 
-    # novo_padrao: o padrao da principal (planilha) vale em todas as unidades do imovel
+    # novo_padrao: o padrao da principal (planilha) vale nas unidades cujo padrao NAO
+    # veio da planilha (unidades trazidas da Betha ou linha da planilha com padrao vazio).
+    # Unidade listada na planilha com padrao proprio (ex.: uma LUXO, outra FINO) mantem o seu.
     if tipo == "novo_padrao":
-        fonte = pri & (df["Origem"] == "PLANILHA") & ~df["Padrao_Digitado"].map(vazio)
-        padrao_imovel = df.loc[fonte].groupby("ChaveImovel")["Padrao_Digitado"].first()
-        for i in df.index[~pri]:
+        da_planilha = (df["Origem"] == "PLANILHA") & ~df["Campos_Betha"].fillna("").str.contains(
+            r"\bPadrao_Digitado\b") & ~df["Padrao_Digitado"].map(vazio)
+        padrao_imovel = df.loc[pri & da_planilha].groupby("ChaveImovel")["Padrao_Digitado"].first()
+        for i in df.index[~pri & ~da_planilha]:
             novo = padrao_imovel.get(df.at[i, "ChaveImovel"])
             if novo is None or chave(novo) == chave(df.at[i, "Padrao_Digitado"]):
                 continue
