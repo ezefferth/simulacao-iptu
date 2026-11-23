@@ -1,0 +1,16 @@
+# Credenciais e cache da API
+.env
+cache_betha/
+__pycache__/
+*.pyc
+*.bak
+
+# Planilhas, entradas e resultados: dados de contribuintes (nome/CPF) -> nunca versionar
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.zip
+entradas/
+saidas/
+~$*
