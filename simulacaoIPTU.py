@@ -4,6 +4,7 @@ Uso:
     python simulacaoIPTU.py --tipo territorial  [--entrada X.xlsx] [--saida Y.xlsx] [--ano 2026]
     python simulacaoIPTU.py --tipo completa     ...
     python simulacaoIPTU.py --tipo sem_unidades ...
+    python simulacaoIPTU.py --tipo novo_padrao  ...
 
 Tipos de planilha (aba SCRIPT_IPTU_ENTRADA):
   territorial  : so imoveis territoriais. Calcula apenas o terreno (VVT) e usa a
@@ -15,6 +16,9 @@ Tipos de planilha (aba SCRIPT_IPTU_ENTRADA):
                  unidades ativas sao buscadas na Betha (idImovelPrincipal) com material,
                  tipo, padrao, uso e area construida. Na principal, o que estiver
                  preenchido na planilha prevalece; o vazio e completado pela Betha.
+  novo_padrao  : igual a sem_unidades, mas o Padrao_Digitado da principal (planilha)
+                 passa a valer em TODAS as unidades do imovel (o padrao anterior de
+                 cada unidade fica registrado em Observacoes).
 
 Em todos os tipos a planilha prevalece sobre a Betha; divergencias de Secao e
 Inscricao sao registradas na coluna Observacoes.
@@ -37,7 +41,8 @@ import pandas as pd
 from betha_api import Betha, linha_do_imovel
 
 ABA_ENTRADA = "SCRIPT_IPTU_ENTRADA"
-TIPOS = ("territorial", "completa", "sem_unidades")
+TIPOS = ("territorial", "completa", "sem_unidades", "novo_padrao")
+COM_UNIDADES_BETHA = ("sem_unidades", "novo_padrao")  # buscam as subordinadas na Betha
 
 COLUNAS_SAIDA = [
     "Codigo", "Codigo_Principal", "ID", "ID_Principal", "Inscricao_imobiliaria", "Inscricao_imobiliaria_InLoco",
@@ -70,6 +75,7 @@ PREENCHE = {
     "completa": CAMPOS_CADASTRO + CAMPOS_VALORES + ["Uso_da_Edificacao"],
     "sem_unidades": CAMPOS_CADASTRO + CAMPOS_VALORES + ["Uso_da_Edificacao"] + CAMPOS_CONSTRUCAO,
 }
+PREENCHE["novo_padrao"] = PREENCHE["sem_unidades"]
 
 
 # =========================================================
@@ -182,7 +188,7 @@ def completar_com_betha(df, tipo, api, ano):
         print(f"ATENCAO: {len(nao_achados)} ID(s) nao encontrados na Betha: {nao_achados[:10]}")
 
     # 2) sem_unidades: traz a principal (se a planilha trouxe outra unidade) e as subordinadas
-    if tipo == "sem_unidades":
+    if tipo in COM_UNIDADES_BETHA:
         principais = {p or i for p, i in zip(df["ID_Principal"], df["ID"]) if (p or i)}
         faltam = principais - set(cadastro)
         for im in api.imoveis("id", faltam) if faltam else []:
@@ -255,6 +261,19 @@ def calcular(df, tipo):
     cod_da_principal = cod[pri].groupby(df.loc[pri, "ChaveImovel"]).first()
     df["Codigo_Principal"] = (df["ChaveImovel"].map(cod_por_id)
                               .fillna(df["ChaveImovel"].map(cod_da_principal)).fillna(""))
+
+    # novo_padrao: o padrao da principal (planilha) vale em todas as unidades do imovel
+    if tipo == "novo_padrao":
+        fonte = pri & (df["Origem"] == "PLANILHA") & ~df["Padrao_Digitado"].map(vazio)
+        padrao_imovel = df.loc[fonte].groupby("ChaveImovel")["Padrao_Digitado"].first()
+        for i in df.index[~pri]:
+            novo = padrao_imovel.get(df.at[i, "ChaveImovel"])
+            if novo is None or chave(novo) == chave(df.at[i, "Padrao_Digitado"]):
+                continue
+            antigo = df.at[i, "Padrao_Digitado"]
+            df.at[i, "Padrao_Digitado"] = novo
+            msg = f"padrao {'' if vazio(antigo) else antigo} -> {novo} (novo padrao da principal)"
+            df.at[i, "Observacoes"] = "; ".join(filter(None, [df.at[i, "Observacoes"], msg]))
 
     # VVT - PGV
     pgv = pd.read_excel("pgv.xlsx", dtype=str)
@@ -434,8 +453,8 @@ def main():
     df = ler_entrada(a.entrada)
     print(f"Entrada: {len(df)} linha(s) de {a.entrada} | tipo {a.tipo}")
     if a.sem_api:
-        if a.tipo == "sem_unidades":
-            sys.exit("--sem-api nao se aplica a sem_unidades: as unidades vem da Betha")
+        if a.tipo in COM_UNIDADES_BETHA:
+            sys.exit(f"--sem-api nao se aplica a {a.tipo}: as unidades vem da Betha")
     else:
         try:
             api = Betha(a.env)

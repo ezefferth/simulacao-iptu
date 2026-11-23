@@ -17,7 +17,7 @@ lançado no sistema tributário (**Betha Tributos**).
 2. [Estrutura da pasta](#2-estrutura-da-pasta)
 3. [Instalação](#3-instalação)
 4. [Planilhas obrigatórias (tabelas de valores)](#4-planilhas-obrigatórias-tabelas-de-valores)
-5. [Os 3 tipos de planilha de entrada](#5-os-3-tipos-de-planilha-de-entrada)
+5. [Os tipos de planilha de entrada](#5-os-tipos-de-planilha-de-entrada)
 6. [Formato da planilha de entrada](#6-formato-da-planilha-de-entrada)
 7. [Rodando](#7-rodando)
 8. [Resultado](#8-resultado)
@@ -143,20 +143,21 @@ colunas do resultado. Sem esse arquivo, o simulador usa o layout padrão e mostr
 
 ---
 
-## 5. Os 3 tipos de planilha de entrada
+## 5. Os tipos de planilha de entrada
 
 | Tipo (`--tipo`) | Quando usar | O que vem da planilha | O que vem da Betha |
 |---|---|---|---|
 | `territorial` | Imóveis que deixaram de ter edificação (predial → territorial) | Cadastro e área do terreno | Campos vazios de cadastro/terreno e valores Anterior/Atual. **Edificação é ignorada**; alíquota da faixa `NAO EDIFICADO` |
 | `completa` | A planilha já traz **todas as unidades** do imóvel (aerolevantamento, novo padrão construtivo) | Tudo da construção (material, tipo, padrão, área in loco) | Só campos vazios de cadastro/terreno, `Uso_da_Edificacao` e valores Anterior/Atual |
 | `sem_unidades` | A planilha traz **só a unidade principal** | A principal | As **unidades subordinadas** ativas (`idImovelPrincipal`), com material, tipo, padrão, uso e área |
+| `novo_padrao` | A planilha traz **só a unidade principal com o padrão construtivo novo** | A principal e o `Padrao_Digitado` novo | Igual a `sem_unidades`; depois o **padrão da principal é aplicado em todas as unidades** do imóvel (o padrão anterior fica em `Observacoes`) |
 
 Exemplo de planilhas reais e o tipo usado:
 
 | Planilha | Tipo | Observação |
 |---|---|---|
 | `1_territorial` | `territorial` | A inscrição atual é a `Inscricao_imobiliaria_InLoco` (termina em `.0`; terminava em `.1` quando era predial) |
-| `2_novo_padrao` | **`sem_unidades`** | Cada linha é a unidade **principal**, com o padrão novo e **sem área construída**. O simulador busca na Betha a área da principal e todas as demais unidades do imóvel. O padrão novo vale **só na principal**; as demais unidades mantêm o padrão da Betha (regra **pendente de revisão**). Com `completa` o imóvel seria calculado sem edificação (alíquota de terreno) |
+| `2_novo_padrao` | **`novo_padrao`** | Cada linha é a unidade **principal**, com o padrão novo e **sem área construída**. O simulador busca na Betha a área da principal e todas as demais unidades do imóvel, e aplica o padrão novo da principal em **todas as unidades**. Com `completa` o imóvel seria calculado sem edificação (alíquota de terreno) |
 | `3_edificacoes` | `completa` | `Inscricao_imobiliaria` é a inscrição englobada da principal e se repete nas unidades; `Inscricao_imobiliaria_InLoco` identifica as **unidades novas** achadas em campo, ainda sem código/ID no sistema |
 
 ---
@@ -214,19 +215,19 @@ Execute **dentro da pasta do projeto** (onde estão `pgv/pgp/aliquota`):
 
 ```bash
 python simulacaoIPTU.py --tipo territorial --entrada entradas/1_territorial.xlsx --saida 1_territorial_SIMULADO.xlsx
-python simulacaoIPTU.py --tipo sem_unidades --entrada entradas/2_novo_padrao.xlsx --saida 2_novo_padrao_SIMULADO.xlsx
+python simulacaoIPTU.py --tipo novo_padrao  --entrada entradas/2_novo_padrao.xlsx --saida 2_novo_padrao_SIMULADO.xlsx
 python simulacaoIPTU.py --tipo completa    --entrada entradas/3_edificacoes.xlsx --saida 3_edificacoes_SIMULADO.xlsx
 ```
 
 | Parâmetro | Padrão | Descrição |
 |---|---|---|
-| `--tipo` | (obrigatório) | `territorial`, `completa` ou `sem_unidades` |
+| `--tipo` | (obrigatório) | `territorial`, `completa`, `sem_unidades` ou `novo_padrao` |
 | `--entrada` | `Calculo IPTU_CAMPOS_SCRIPT.xlsx` | Planilha ou CSV de entrada |
 | `--saida` | `planilhaSimulacao_<tipo>.xlsx` | Arquivo gerado |
 | `--ano` | `2026` | Exercício "Atual" (Anterior = ano − 1) |
 | `--modelo` | `Calculo IPTU_CAMPOS_SCRIPT.xlsx` | Modelo do layout de saída |
 | `--env` | `.env` | Arquivo de credenciais |
-| `--sem-api` | — | Não consulta a Betha (não vale para `sem_unidades`) |
+| `--sem-api` | — | Não consulta a Betha (não vale para `sem_unidades` e `novo_padrao`) |
 
 Saída esperada:
 
@@ -243,7 +244,7 @@ O `.xlsx` gerado tem três abas:
 
 | Aba | Conteúdo |
 |---|---|
-| `SCRIPT_IPTU_SAIDA` | Uma linha por imóvel, no layout do modelo: dados cadastrais, valores Anterior/Atual/Simulação, `Valor_Imposto_Simulado` e `Valor_Impacto` (simulado − atual) |
+| `SCRIPT_IPTU_SAIDA` | **Uma linha por imóvel principal** (os valores somam todas as unidades), no layout do modelo: dados cadastrais, valores Anterior/Atual/Simulação, `Valor_Imposto_Simulado` e `Valor_Impacto` (simulado − atual) |
 | `Conferencia` | Resumo por imóvel: `Codigo`, `Codigo_Principal`, `ID`, `ID_Principal`, `Qtd_Unidades`, imposto atual × simulado, impacto e `Observacoes` |
 | `Unidades` | Cálculo passo a passo, uma linha por unidade: `ValorPgv`, `VVT`, chaves da PGP (`KMaterial`, `KEdificacao`, `KPadrao`), `VM2E`, `AreaUnidade`, `VVE-U`, `VVTE`, `VV_T`, `UsoSimulacao`, `Aliquota`, `VI`, `Origem` (PLANILHA/BETHA) e `Campos_Betha` (o que foi completado pela API) |
 
