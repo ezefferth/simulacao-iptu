@@ -1,6 +1,7 @@
 """Simulacao de IPTU.
 
 Uso:
+    python simulacaoIPTU.py   # Play: entradas/1_territorial, 2_novo_padrao e 3_edificacoes
     python simulacaoIPTU.py --tipo territorial  [--entrada X.xlsx] [--saida Y.xlsx] [--ano 2026]
     python simulacaoIPTU.py --tipo completa     ...
     python simulacaoIPTU.py --tipo sem_unidades ...
@@ -32,8 +33,10 @@ Calculo:
 """
 import argparse
 import re
+import subprocess
 import sys
 import unicodedata
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -150,6 +153,11 @@ def ler_entrada(caminho):
         if c not in df.columns:
             df[c] = np.nan
     df = df.astype(object)
+    # Area InLoco 0 = nao medida (planilhas do novo padrao/territorial vem com 0): trata
+    # como vazia, para valer a area cadastral (Area_Construida_Unidade ou a da Betha).
+    # Sem isso a principal entra sem edificacao.
+    zero = para_numero(df["Area_Construida_Unidade_InLoco"]).fillna(1) == 0
+    df.loc[zero, "Area_Construida_Unidade_InLoco"] = np.nan
     # Relatorio Betha (CAMPOS_SCRIPT-betha) traz a area cadastral em Area_Construida_Unidade
     if "Area_Construida_Unidade" in df.columns:
         vaz = df["Area_Construida_Unidade_InLoco"].map(vazio)
@@ -472,5 +480,32 @@ def main():
           + (f" | ATENCAO: {sem_vi} imovel(is) sem imposto simulado (ver Observacoes)" if sem_vi else ""))
 
 
+PLAY = (  # (nome, tipo, arquivo em entradas/ sem .xlsx)
+    ("Territorial", "territorial", "1_territorial"),
+    ("Novo padrao", "novo_padrao", "2_novo_padrao"),  # NAO e "completa": sem area, sairia so terreno
+    ("Edificacoes", "completa", "3_edificacoes"),
+)
+
+
+def executar_pelo_play():
+    """Sem argumentos (botao Play): roda as tres simulacoes de entradas/ com a Betha."""
+    pasta = Path(__file__).resolve().parent
+    print("Execucao pelo Play: tres simulacoes em sequencia, consultando a Betha.", flush=True)
+    for numero, (nome, tipo, arquivo) in enumerate(PLAY, start=1):
+        print(f"\n[{numero}/{len(PLAY)}] {nome} (--tipo {tipo})", flush=True)
+        comando = [sys.executable, str(pasta / "simulacaoIPTU.py"), "--tipo", tipo,
+                   "--entrada", str(pasta / "entradas" / f"{arquivo}.xlsx"),
+                   "--saida", str(pasta / f"{arquivo}_SIMULADO.xlsx")]
+        try:
+            subprocess.run(comando, cwd=pasta, check=True)
+        except subprocess.CalledProcessError as erro:
+            print(f"Execucao interrompida na etapa {nome}. Confira a mensagem acima.", flush=True)
+            raise SystemExit(erro.returncode) from None
+    print("\nAs tres simulacoes terminaram.", flush=True)
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 1:
+        executar_pelo_play()
+    else:
+        main()

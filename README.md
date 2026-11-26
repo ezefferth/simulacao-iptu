@@ -188,11 +188,11 @@ Aceita `.xlsx` ou `.csv`.
 | `Secao` | Seção de logradouro (chave da PGV) |
 | `Tipo_de_Edificacao`, `Tipo_de_Material`, `Padrao_Digitado` | Chave da PGP |
 | `Uso_da_Edificacao` | Faixa de alíquota |
-| `Area_Construida_Unidade_InLoco` | Área construída da unidade (m²) |
+| `Area_Construida_Unidade_InLoco` | Área construída da unidade (m²). **Vazio ou `0` = não medida**: vale a `Area_Construida_Unidade` da planilha ou a área da Betha |
 | `Area_Terreno` | Área do terreno (m²), da unidade principal |
 | `Valor_Venal_Terreno_Anterior/Atual`, `Valor_Venal_Edificacao_Anterior/Atual`, `Valor_Venal_Total_Imovel_Anterior/Atual`, `Valor_Aliquota_Anterior/Atual`, `Valor_Imposto_Anterior/Atual` | Valores lançados (completados pela Betha se vazios) |
 | `Nome_Proprietario`, `Cpf_Cnpj`, `Bairro`, `Tipo`, `Situacao`, `Taxacao`, `Numero_de_Pavimentos`, `Classificacao`, `Patrimonio`, `Tipo_de_Imposto`, `Atualizacao_Aerolevantamento`, `Area_Edificada_Total`, `Area_Construida_Obras`, `Ano` | Informativos, repassados para a saída |
-| `Area_Construida_Unidade` | (CSV do relatório cadastral) usada quando `..._InLoco` está vazia |
+| `Area_Construida_Unidade` | Área cadastral; usada quando `..._InLoco` está vazia ou `0` |
 
 ### 6.2 Como as linhas viram imóveis
 
@@ -213,7 +213,17 @@ Aceita `.xlsx` ou `.csv`.
 
 ## 7. Rodando
 
-Execute **dentro da pasta do projeto** (onde estão `pgv/pgp/aliquota`):
+**Atalho (botão Play do editor):** sem argumentos, o script roda as três simulações de
+`entradas/` em sequência, cada uma com o tipo certo, e grava os `*_SIMULADO.xlsx` na pasta:
+
+```bash
+python simulacaoIPTU.py
+```
+
+> O novo padrão **tem** que rodar como `novo_padrao`. Rodado como `completa`, a
+> edificação sai zerada e o imposto fica só de terreno, um valor alto e errado.
+
+Para rodar um arquivo por vez, execute **dentro da pasta do projeto** (onde estão `pgv/pgp/aliquota`):
 
 ```bash
 python simulacaoIPTU.py --tipo territorial --entrada entradas/1_territorial.xlsx --saida 1_territorial_SIMULADO.xlsx
