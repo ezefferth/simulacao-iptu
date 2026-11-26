@@ -1,10 +1,10 @@
-Metodologia aplicação do IPCA por valores acumulados dos últimos 12 meses, segundo publicação do IBGE (jun./2026), 4,64%
+Índice de atualização para 2026: 4,9423%
 
 Disponível em: https://www.ibge.gov.br/explica/inflacao.php
 
-PGV (Planta Genérica de valores Territoriais): 4,64% sobre o valor do m²
-PGP (Planta Genérica de valores prediais): 4,64% sobre o valor do m²
-Alíquotas: 4,64% sobre as faixas de valores para aplicação das alíquotas
+PGV (Planta Genérica de valores Territoriais): valores 2026 da planta de valores (vl_2026 = vl_2025 + 4,9423%, art. 512)
+PGP (Planta Genérica de valores prediais): PGP 2025 + 4,9423% sobre o valor do m²
+Alíquotas: Tabela 1 do Anexo II do CTM vigente para 2026
 
 Regra de arredondamento:
 
