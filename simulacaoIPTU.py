@@ -176,6 +176,8 @@ def ler_entrada(caminho):
     df["ID"] = texto_id(df["ID"])
     df["ID_Principal"] = texto_id(df["ID_Principal"])
     df["Origem"] = "PLANILHA"
+    df["Padrao_Betha"] = ""
+    df["Area_Betha"] = np.nan
     df["Campos_Betha"] = ""
     df["Observacoes"] = ""
     return df
@@ -238,6 +240,16 @@ def completar_com_betha(df, tipo, api, ano):
             if vazio(df.at[i, col]) and not vazio(betha.get(col)):
                 df.at[i, col] = betha[col]
                 preenchidos.append(col)
+        # para auditoria: como a unidade esta hoje na Betha
+        df.at[i, "Padrao_Betha"] = sem_prefixo(betha.get("Padrao_Digitado"))
+        df.at[i, "Area_Betha"] = betha.get("Area_Construida_Unidade_InLoco")
+        # novo_padrao (regra B): a planilha so traz o padrao novo da principal; a area
+        # construida e a da Betha (a do geo vem 0 = nao levantada nesta planilha)
+        if (tipo == "novo_padrao" and df.at[i, "Origem"] == "PLANILHA"
+                and not vazio(betha.get("Area_Construida_Unidade_InLoco"))
+                and para_numero(pd.Series([df.at[i, "Area_Construida_Unidade_InLoco"]])).fillna(0).iloc[0] == 0):
+            df.at[i, "Area_Construida_Unidade_InLoco"] = betha["Area_Construida_Unidade_InLoco"]
+            preenchidos.append("Area_Construida_Unidade_InLoco")
         if df.at[i, "Origem"] == "BETHA":
             preenchidos = ["unidade inteira"]
         df.at[i, "Campos_Betha"] = ", ".join(preenchidos)
@@ -405,7 +417,7 @@ def layout_saida(modelo):
         return [c for c in COLUNAS_SAIDA if c not in ("Qtd_Unidades", "Observacoes")]
 
 
-def gravar(df, caminho, layout):
+def gravar(df, caminho, layout, tipo="completa"):
     df["Valor_Venal_Terreno_Simulacao"] = df["VVT"]
     df["Valor_Venal_Edificacao_Simulacao"] = df["VVTE"]
     df["Valor_Venal_Total_Imovel_Simulacao"] = df["VV_T"]
@@ -427,34 +439,172 @@ def gravar(df, caminho, layout):
     saida = pd.DataFrame({col: pri[ALIAS_SAIDA.get(col.strip(), col.strip())]
                           if ALIAS_SAIDA.get(col.strip(), col.strip()) in pri.columns
                           else np.nan for col in layout})
-    conferencia = pri[["Codigo", "Codigo_Principal", "ID", "ID_Principal", "Inscricao_imobiliaria",
-                       "Qtd_Unidades", "Valor_Imposto_Atual", "Valor_Imposto_Simulado",
-                       "Valor_Impacto", "ObsImovel"]].rename(columns={"ObsImovel": "Observacoes"})
+    conferencia = montar_conferencia(pri)
+    unid = montar_unidades(df, pri)
 
-    unid = df[["ChaveImovel", "Principal", "Origem", "Codigo", "Codigo_Principal", "ID", "ID_Principal",
-               "Inscricao_imobiliaria", "Unidade", "Secao", "SecaoPgv", "ValorPgv", "AreaTerreno",
-               "VVT", "KMaterial", "KEdificacao", "KPadrao", "VM2E", "AreaUnidade", "VVE-U",
-               "VVTE", "VV_T", "UsoSimulacao", "Aliquota", "VI", "Campos_Betha", "Observacoes"]].copy()
-    unid["Principal"] = np.where(unid["Principal"], "SIM", "")
-    unid["_o"] = pd.to_numeric(unid["Unidade"], errors="coerce")
-    unid = unid.sort_values(["ChaveImovel", "_o"]).drop(columns="_o")
-
+    moeda = "#,##0.00"
     with pd.ExcelWriter(caminho, engine="openpyxl") as xl:
         saida.to_excel(xl, index=False, sheet_name="SCRIPT_IPTU_SAIDA")
         conferencia.to_excel(xl, index=False, sheet_name="Conferencia")
         unid.to_excel(xl, index=False, sheet_name="Unidades")
-        for aba, fmt in (("SCRIPT_IPTU_SAIDA", {**{c: "#,##0.00" for c in valores + areas},
-                                                **{c: "0.00" for c in aliqs}}),
-                         ("Unidades", {c: "#,##0.00" for c in ["ValorPgv", "AreaTerreno", "VVT", "VM2E",
-                                                               "AreaUnidade", "VVE-U", "VVTE", "VV_T", "VI"]})):
+        legenda(tipo).to_excel(xl, index=False, sheet_name="Legenda")
+        texto = ("Codigo", "Codigo_Principal", "ID", "ID_Principal", "Inscricao_imobiliaria", "Unidade",
+                 "Linha", "Fonte", "Uso_Aliquota", "Observacoes", "Secao", "Nome_Proprietario")
+        for aba, tab in (("Conferencia", conferencia), ("Unidades", unid)):
             ws = xl.sheets[aba]
-            cab = {cel.value: cel.column_letter for cel in ws[1]}
-            for nome, mascara in fmt.items():
-                if nome in cab:
-                    for cel in ws[cab[nome]][1:]:
-                        cel.number_format = mascara
-                    ws.column_dimensions[cab[nome]].width = max(len(nome) + 2, 14)
+            for n, nome in enumerate(tab.columns, start=1):
+                letra = ws.cell(row=1, column=n).column_letter
+                ws.column_dimensions[letra].width = min(max(len(str(nome)) + 2, 12), 60 if "Calculo" in nome else 30)
+                if pd.api.types.is_numeric_dtype(tab[nome]) and nome not in texto:
+                    for cel in ws[letra][1:]:
+                        cel.number_format = "0.00" if "Aliquota" in nome or nome.endswith("%") else moeda
+            ws.freeze_panes = "C2"
+        if "Linha" in unid.columns:  # destaque: principal e total do imovel
+            from openpyxl.styles import Font, PatternFill
+            ws = xl.sheets["Unidades"]
+            col = list(unid.columns).index("Linha") + 1
+            for r in range(2, ws.max_row + 1):
+                v = ws.cell(row=r, column=col).value
+                if v == "TOTAL DO IMOVEL":
+                    for c in ws[r]:
+                        c.font = Font(bold=True)
+                        c.fill = PatternFill("solid", fgColor="DDEBF7")
+                elif v == "PRINCIPAL":
+                    for c in ws[r]:
+                        c.font = Font(bold=True)
+        ws = xl.sheets["SCRIPT_IPTU_SAIDA"]
+        cab = {cel.value: cel.column_letter for cel in ws[1]}
+        for nome, mascara in {**{c: moeda for c in valores + areas}, **{c: "0.00" for c in aliqs}}.items():
+            if nome in cab:
+                for cel in ws[cab[nome]][1:]:
+                    cel.number_format = mascara
+                ws.column_dimensions[cab[nome]].width = max(len(nome) + 2, 14)
     return saida
+
+
+def br(v, casas=2):
+    """1234.5 -> '1.234,50' (texto das memorias de calculo)."""
+    if v is None or pd.isna(v):
+        return "-"
+    return f"{v:,.{casas}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def montar_conferencia(pri):
+    """Uma linha por imovel principal com a base de calculo completa (simulado x Betha)."""
+    p = pri
+    atual = para_numero(p["Valor_Imposto_Atual"])
+    c = pd.DataFrame({
+        "Codigo_Principal": p["Codigo_Principal"], "ID_Principal": p["ID_Principal"],
+        "Inscricao_imobiliaria": p["Inscricao_imobiliaria"], "Nome_Proprietario": p["Nome_Proprietario"],
+        "Qtd_Unidades": p["Qtd_Unidades"],
+        # Terreno
+        "Area_Terreno": p["AreaTerreno"], "Secao": p["SecaoPgv"], "Valor_m2_PGV": p["ValorPgv"],
+        "VV_Terreno_Simulado": p["VVT"],
+        "Calculo_Terreno": [f"{br(a)} m2 x {br(v)} = {br(t)}" for a, v, t in zip(p["AreaTerreno"], p["ValorPgv"], p["VVT"])],
+        # Edificacao
+        "Area_Edificada_Simulada": p["AreaEdificadaSimulada"], "VV_Edificacao_Simulado": p["VVTE"].fillna(0),
+        "Calculo_Edificacao": "soma das unidades (aba Unidades)",
+        # Imovel, aliquota e imposto
+        "VV_Imovel_Simulado": p["VV_T"],
+        "Calculo_VV_Imovel": [f"{br(t)} + {br(e)} = {br(v)}" for t, e, v in zip(p["VVT"], p["VVTE"].fillna(0), p["VV_T"])],
+        "Uso_Aliquota": p["UsoSimulacao"], "Aliquota_Simulada": p["Aliquota"],
+        "Imposto_Simulado": p["VI"],
+        "Calculo_Imposto": [f"{br(v)} x {br(a)}% = {br(i)}" for v, a, i in zip(p["VV_T"], p["Aliquota"], p["VI"])],
+        # Betha (lancado)
+        "VV_Terreno_Betha": p["Valor_Venal_Terreno_Atual"], "VV_Edificacao_Betha": p["Valor_Venal_Edificacao_Atual"],
+        "VV_Imovel_Betha": p["Valor_Venal_Total_Imovel_Atual"], "Aliquota_Betha": p["Valor_Aliquota_Atual"],
+        "Imposto_Betha": atual,
+        "Impacto": p["VI"] - atual,
+        "Impacto_%": np.where(atual > 0, (p["VI"] - atual) / atual * 100, np.nan),
+        "Observacoes": p["ObsImovel"],
+    })
+    return c.reset_index(drop=True)
+
+
+def montar_unidades(df, pri):
+    """Principal, unidades e TOTAL DO IMOVEL, com a conta de cada etapa."""
+    ordem = {k: n for n, k in enumerate(pri["ChaveImovel"])}
+    u = df.copy()
+    u["_g"] = u["ChaveImovel"].map(ordem)
+    u["_t"] = np.where(u["Principal"], 0, 1)
+    u["_o"] = pd.to_numeric(u["Unidade"], errors="coerce")
+    u["Linha"] = np.where(u["Principal"], "PRINCIPAL", "UNIDADE")
+    u["Codigo"] = np.where(texto_id(u["Codigo"]) == "", "NOVA (in loco)", texto_id(u["Codigo"]))
+    cb = u["Campos_Betha"].fillna("")
+    u["Fonte"] = np.select(
+        [u["Origem"] == "BETHA", cb.str.contains("Area_Construida_Unidade_InLoco")],
+        ["BETHA", "GEO (area da Betha)"], "GEO")
+    mudou = (u["Padrao_Betha"].map(chave) != "") & (u["Padrao_Betha"].map(chave) != u["Padrao_Digitado"].map(chave))
+    u.loc[mudou & (u["Fonte"] == "BETHA"), "Fonte"] = "BETHA (padrao do geo)"
+    u["Calculo_Edificacao"] = [
+        (f"{br(a)} m2 x {br(m)} = {br(v)}" if pd.notna(a) and pd.notna(m) else
+         ("sem m2 na PGP" if pd.notna(a) and a > 0 else "sem edificacao"))
+        for a, m, v in zip(u["AreaUnidade"], u["VM2E"], u["VVE-U"])]
+    u["Calculo_Terreno"] = np.where(u["Principal"], [f"{br(a)} m2 x {br(v)} = {br(t)}" for a, v, t in
+                                                    zip(u["AreaTerreno"], u["ValorPgv"], u["VVT"])], "")
+    for c in ("AreaTerreno", "ValorPgv", "VVT"):
+        u.loc[~u["Principal"], c] = np.nan
+
+    tot = pri.copy()
+    tot["_g"] = tot["ChaveImovel"].map(ordem)
+    tot["_t"], tot["_o"], tot["Linha"], tot["Fonte"] = 2, np.nan, "TOTAL DO IMOVEL", ""
+    tot["AreaUnidade"], tot["VVE-U"] = tot["AreaEdificadaSimulada"], tot["VVTE"].fillna(0)
+    tot["Calculo_Edificacao"] = [f"soma de {int(q)} unidade(s) = {br(v)}" for q, v in zip(tot["Qtd_Unidades"], tot["VVE-U"])]
+    tot["Calculo_Terreno"] = ""
+    tot["Calculo_VV_Imovel"] = [f"{br(t)} + {br(e)} = {br(v)}" for t, e, v in zip(tot["VVT"], tot["VVE-U"], tot["VV_T"])]
+    tot["Calculo_Imposto"] = [f"{br(v)} x {br(a)}% = {br(i)}" for v, a, i in zip(tot["VV_T"], tot["Aliquota"], tot["VI"])]
+    tot["Imposto_Betha"] = para_numero(tot["Valor_Imposto_Atual"])
+    for c in ("Codigo", "ID", "Unidade", "Tipo_de_Material", "Tipo_de_Edificacao", "Padrao_Betha",
+              "Padrao_Digitado", "Uso_da_Edificacao", "VM2E", "Area_Betha", "Observacoes"):
+        tot[c] = np.nan if c in ("VM2E", "Area_Betha") else ""
+    tot["Observacoes"] = tot["ObsImovel"]
+    for c in ("AreaTerreno", "ValorPgv"):
+        tot[c] = np.nan
+
+    u = pd.concat([u, tot], ignore_index=True).sort_values(["_g", "_t", "_o"])
+    cols = {
+        "Codigo_Principal": "Codigo_Principal", "Linha": "Linha", "Codigo": "Codigo", "ID": "ID",
+        "Unidade": "Unidade", "Fonte": "Fonte",
+        "Tipo_de_Material": "Material", "Tipo_de_Edificacao": "Tipo_Edificacao",
+        "Padrao_Betha": "Padrao_Betha", "Padrao_Digitado": "Padrao_Calculo", "Uso_da_Edificacao": "Uso",
+        "Area_Betha": "Area_Betha", "AreaUnidade": "Area_Calculo", "VM2E": "Valor_m2_PGP",
+        "VVE-U": "VV_Edificacao", "Calculo_Edificacao": "Calculo_Edificacao",
+        "AreaTerreno": "Area_Terreno", "ValorPgv": "Valor_m2_PGV", "VVT": "VV_Terreno",
+        "Calculo_Terreno": "Calculo_Terreno", "VV_T": "VV_Imovel", "Calculo_VV_Imovel": "Calculo_VV_Imovel",
+        "UsoSimulacao": "Uso_Aliquota", "Aliquota": "Aliquota", "VI": "Imposto_Simulado",
+        "Calculo_Imposto": "Calculo_Imposto", "Imposto_Betha": "Imposto_Betha", "Observacoes": "Observacoes",
+    }
+    for c in cols:
+        if c not in u.columns:
+            u[c] = np.nan
+    u.loc[u["Linha"] != "TOTAL DO IMOVEL", ["VV_T", "UsoSimulacao", "Aliquota", "VI",
+                                             "Calculo_VV_Imovel", "Calculo_Imposto", "Imposto_Betha"]] = np.nan
+    u["Area_Betha"] = para_numero(u["Area_Betha"])
+    return u[list(cols)].rename(columns=cols).reset_index(drop=True)
+
+
+def legenda(tipo):
+    regra = {
+        "territorial": "A) Territorial: edificacoes suprimidas; so terreno, aliquota NAO EDIFICADO.",
+        "novo_padrao": ("B) Novo padrao: unidades buscadas na Betha (area, material, tipo); o Padrao_Digitado "
+                        "novo do geo vale em todas as unidades. Padrao_Betha = padrao anterior."),
+        "completa": ("C) Edificacoes: campos e linhas do geo sao a verdade (area, material, tipo, uso, padrao "
+                     "e quantidade de unidades); a Betha so fornece cadastro, terreno e valores lancados."),
+        "sem_unidades": "Sem unidades: a planilha traz so a principal; as unidades vem da Betha.",
+    }[tipo]
+    linhas = [
+        ("Regra aplicada", regra),
+        ("IPTU", "Valor Venal do Imovel x Aliquota"),
+        ("Valor Venal do Imovel", "Valor Venal do Terreno + Valor Venal da Edificacao"),
+        ("Valor Venal do Terreno", "Area_Terreno (Betha, da principal) x m2 da PGV (distrito/setor/zona/quadra/secao)"),
+        ("Valor Venal da Edificacao", "soma por unidade de Area x m2 da PGP (material/tipo/padrao)"),
+        ("Aliquota", "faixa por uso da principal e Valor Venal do Imovel (aliquota.xlsx); sem edificacao = NAO EDIFICADO"),
+        ("Fonte GEO", "dado do levantamento in loco (verdade)"),
+        ("Fonte BETHA", "unidade/dado do cadastro da Betha"),
+        ("Conferencia", "1 linha por imovel principal: base de calculo simulada x valores lancados na Betha"),
+        ("Unidades", "PRINCIPAL, UNIDADEs e TOTAL DO IMOVEL, com a conta de cada etapa"),
+    ]
+    return pd.DataFrame(linhas, columns=["Item", "Descricao"])
 
 
 def main():
@@ -483,7 +633,7 @@ def main():
         df = completar_com_betha(df, a.tipo, api, a.ano)
 
     df = calcular(df, a.tipo)
-    saida = gravar(df, saida_arq, layout_saida(a.modelo))
+    saida = gravar(df, saida_arq, layout_saida(a.modelo), a.tipo)
     sem_vi = saida["Valor_Imposto_Simulado"].isna().sum()
     print(f"Arquivo gerado: {saida_arq} | {len(saida)} imovel(is), {len(df)} unidade(s)"
           + (f" | ATENCAO: {sem_vi} imovel(is) sem imposto simulado (ver Observacoes)" if sem_vi else ""))
@@ -491,7 +641,7 @@ def main():
 
 PLAY = (  # (nome, tipo, arquivo em entradas/ sem .xlsx)
     ("Territorial", "territorial", "1_territorial"),
-    ("Novo padrao", "completa", "2_novo_padrao"),  # construcao so do geo (nao misturar)
+    ("Novo padrao", "novo_padrao", "2_novo_padrao"),  # unidades da Betha + padrao novo do geo
     ("Edificacoes", "completa", "3_edificacoes"),
 )
 
