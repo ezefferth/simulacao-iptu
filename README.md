@@ -150,7 +150,7 @@ colunas do resultado. Sem esse arquivo, o simulador usa o layout padrão e mostr
 | `territorial` | Imóveis que deixaram de ter edificação (predial → territorial) | Cadastro e área do terreno | Campos vazios de cadastro/terreno e valores Anterior/Atual. **Edificação é ignorada**; alíquota da faixa `NAO EDIFICADO` |
 | `completa` | A planilha do geo traz **todas as unidades** do imóvel (edificações in loco) | Tudo da construção e a quantidade de unidades (material, tipo, uso, padrão, área in loco) | Só campos vazios de cadastro/terreno e valores Anterior/Atual |
 | `sem_unidades` | A planilha traz **só a unidade principal** | A principal | As **unidades subordinadas** ativas (`idImovelPrincipal`), com material, tipo, padrão, uso e área |
-| `novo_padrao` | A planilha traz **só a unidade principal com o padrão construtivo novo** | O `Padrao_Digitado` novo (e material/tipo/uso da principal) | As **unidades englobadas** com área, material e tipo; o **padrão novo do geo é aplicado em todas as unidades**, inclusive na principal (padrão anterior em `Padrao_Betha`). Área da principal = da Betha, pois a planilha não a levanta (vem 0) |
+| `novo_padrao` | A planilha traz **só a unidade principal com o padrão construtivo novo** | O `Padrao_Digitado` novo (e material/tipo/uso da principal) | As **unidades englobadas** com área, material e tipo; o **padrão novo do geo é aplicado em todas as unidades**, inclusive na principal (padrão anterior em `Padrao_Betha`). Área: a `Area_Construida_Unidade_InLoco` é do geo e **não é preenchida** (continua `0`); quando o geo não apresenta a área, o cálculo usa a `Area_Construida_Unidade` (Betha). |
 
 Exemplo de planilhas reais e o tipo usado:
 
@@ -199,8 +199,8 @@ Aceita `.xlsx` ou `.csv`.
 | **Geo** (levantamento in loco) | `Inscricao_imobiliaria_InLoco`, `Unidade`, `Tipo_de_Edificacao`, `Tipo_de_Material`, `Uso_da_Edificacao`, `Area_Construida_Unidade_InLoco`, `Padrao_Digitado` | Edificação e alíquota. É a verdade: **a Betha nunca completa nem substitui** |
 | **Betha** | todas as demais (ID, código, inscrição, seção, proprietário, `Area_Terreno`, `Area_Construida_Unidade`, valores anterior/atual...) | Terreno e comparação. Campo vazio é completado pela Betha |
 
-Exceção (regra **B**, `novo_padrao`): o geo informa só o padrão novo; as unidades, áreas,
-material e tipo vêm da Betha, e o padrão do geo substitui o da Betha em todas as unidades.
+Exceção (regra **B**, `novo_padrao`): o geo informa só o padrão novo; as unidades, material
+e tipo vêm da Betha, e o padrão do geo substitui o da Betha em todas as unidades. Área: a `Area_Construida_Unidade_InLoco` é do geo e **não é preenchida** (continua `0`); quando o geo não apresenta a área, o cálculo usa a `Area_Construida_Unidade` (Betha).
 
 ```
 IPTU                      = Valor Venal do Imóvel x alíquota
@@ -273,7 +273,7 @@ O `.xlsx` gerado tem quatro abas:
 |---|---|
 | `SCRIPT_IPTU_SAIDA` | **Uma linha por imóvel principal** (os valores somam todas as unidades), no layout do modelo |
 | `Conferencia` | **Uma linha por imóvel principal com a base de cálculo**: área do terreno × m² da PGV = VV terreno; área edificada e VV edificação (soma das unidades); VV imóvel; uso e alíquota; imposto simulado; e, ao lado, os valores lançados na Betha (VV terreno/edificação/imóvel, alíquota, imposto), `Impacto` e `Impacto_%`. As colunas `Calculo_*` trazem a conta escrita (ex.: `581,00 m2 x 479,00 = 278.299,00`) |
-| `Unidades` | Por imóvel: linha **PRINCIPAL**, as **UNIDADEs** e o **TOTAL DO IMOVEL** (destacado). Em cada unidade: `Fonte` (GEO / BETHA / BETHA (padrao do geo)), material, tipo, `Padrao_Betha` × `Padrao_Calculo`, `Area_Betha` × `Area_Calculo`, m² da PGP e `Calculo_Edificacao`. Na principal, o terreno (`Calculo_Terreno`); no total, `Calculo_VV_Imovel` e `Calculo_Imposto`. Unidade nova sem cadastro aparece como `NOVA (in loco)` |
+| `Unidades` | Por imóvel: linha **PRINCIPAL**, as **UNIDADEs** e o **TOTAL DO IMOVEL** (destacado). Em cada unidade: `Fonte` (GEO / BETHA / BETHA (padrao do geo)), material, tipo, `Padrao_Betha` × `Padrao_Calculo`, `Area_Geo` × `Area_Betha` × `Area_Calculo` (com `Fonte_Area`), m² da PGP e `Calculo_Edificacao`. Na principal, o terreno (`Calculo_Terreno`); no total, `Calculo_VV_Imovel` e `Calculo_Imposto`. Unidade nova sem cadastro aparece como `NOVA (in loco)` |
 | `Legenda` | A regra aplicada (A, B ou C) e as fórmulas |
 
 ---

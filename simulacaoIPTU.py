@@ -50,7 +50,7 @@ COM_UNIDADES_BETHA = ("sem_unidades", "novo_padrao")  # buscam as subordinadas n
 COLUNAS_SAIDA = [
     "Codigo", "Codigo_Principal", "ID", "ID_Principal", "Inscricao_imobiliaria", "Inscricao_imobiliaria_InLoco",
     "Unidade", "Secao", "Tipo_de_Edificacao", "Tipo_de_Material", "Uso_da_Edificacao",
-    "Area_Construida_Unidade_InLoco", "Padrao_Digitado", "Nome_Proprietario", "Cpf_Cnpj",
+    "Area_Construida_Unidade_InLoco", "Area_Construida_Unidade", "Padrao_Digitado", "Nome_Proprietario", "Cpf_Cnpj",
     "Bairro", "Tipo", "Situacao", "Area_Edificada_Total", "Area_Construida_Obras",
     "Area_Terreno", "Taxacao", "Numero_de_Pavimentos", "Classificacao", "Patrimonio",
     "Valor_Venal_Terreno_Anterior", "Valor_Venal_Terreno_Atual", "Valor_Venal_Terreno_Simulacao",
@@ -81,7 +81,7 @@ CAMPOS_VALORES = [f"{b}_{s}" for b in ("Valor_Venal_Terreno", "Valor_Venal_Edifi
                                        "Valor_Venal_Total_Imovel", "Valor_Aliquota",
                                        "Valor_Imposto") for s in ("Anterior", "Atual")]
 CAMPOS_CONSTRUCAO = ["Tipo_de_Material", "Tipo_de_Edificacao", "Padrao_Digitado",
-                     "Area_Construida_Unidade_InLoco"]
+                     "Area_Construida_Unidade"]  # area da Betha (nunca grava na InLoco do geo)
 PREENCHE = {
     "territorial": CAMPOS_CADASTRO + CAMPOS_VALORES,
     "completa": CAMPOS_CADASTRO + CAMPOS_VALORES,
@@ -162,8 +162,7 @@ def ler_entrada(caminho):
         df = df.rename(columns={"Codigo_Principal": "ID_Principal"})  # layout anterior
     # Entrada so da Betha (CSV do relatorio Groovy, sem coluna do geo): a area e a cadastral.
     # Nao mistura: o arquivo inteiro e Betha.
-    if "Area_Construida_Unidade_InLoco" not in df.columns and "Area_Construida_Unidade" in df.columns:
-        df["Area_Construida_Unidade_InLoco"] = df["Area_Construida_Unidade"]
+    sem_geo = "Area_Construida_Unidade_InLoco" not in df.columns
     for c in COLUNAS_SAIDA:
         if c not in df.columns:
             df[c] = np.nan
@@ -175,6 +174,7 @@ def ler_entrada(caminho):
         df[c] = df[c].map(sem_prefixo)
     df["ID"] = texto_id(df["ID"])
     df["ID_Principal"] = texto_id(df["ID_Principal"])
+    df["SemGeo"] = sem_geo
     df["Origem"] = "PLANILHA"
     df["Padrao_Betha"] = ""
     df["Area_Betha"] = np.nan
@@ -242,14 +242,7 @@ def completar_com_betha(df, tipo, api, ano):
                 preenchidos.append(col)
         # para auditoria: como a unidade esta hoje na Betha
         df.at[i, "Padrao_Betha"] = sem_prefixo(betha.get("Padrao_Digitado"))
-        df.at[i, "Area_Betha"] = betha.get("Area_Construida_Unidade_InLoco")
-        # novo_padrao (regra B): a planilha so traz o padrao novo da principal; a area
-        # construida e a da Betha (a do geo vem 0 = nao levantada nesta planilha)
-        if (tipo == "novo_padrao" and df.at[i, "Origem"] == "PLANILHA"
-                and not vazio(betha.get("Area_Construida_Unidade_InLoco"))
-                and para_numero(pd.Series([df.at[i, "Area_Construida_Unidade_InLoco"]])).fillna(0).iloc[0] == 0):
-            df.at[i, "Area_Construida_Unidade_InLoco"] = betha["Area_Construida_Unidade_InLoco"]
-            preenchidos.append("Area_Construida_Unidade_InLoco")
+        df.at[i, "Area_Betha"] = betha.get("Area_Construida_Unidade")
         if df.at[i, "Origem"] == "BETHA":
             preenchidos = ["unidade inteira"]
         df.at[i, "Campos_Betha"] = ", ".join(preenchidos)
@@ -351,7 +344,15 @@ def calcular(df, tipo):
     pgp_u = pgp[kp + ["Valor"]].drop_duplicates(subset=kp).rename(columns={"Valor": "VM2E"})
     df = df.merge(pgp_u, on=kp, how="left", validate="m:1")
     df["VM2E"] = para_numero(df["VM2E"])
-    df["AreaUnidade"] = para_numero(df["Area_Construida_Unidade_InLoco"])
+    # Area do calculo: a do geo (InLoco). Quando o geo nao apresenta a area (vazia ou 0)
+    # na regra B (novo_padrao/sem_unidades) ou numa entrada so da Betha (CSV sem coluna do
+    # geo), usa a Area_Construida_Unidade da Betha. A coluna do geo nunca e alterada.
+    area_geo = para_numero(df["Area_Construida_Unidade_InLoco"])
+    area_betha = para_numero(df["Area_Construida_Unidade"])
+    usa_betha = (area_geo.fillna(0) <= 0) & area_betha.notna() & (
+        (tipo in COM_UNIDADES_BETHA) | df["SemGeo"].fillna(False).astype(bool))
+    df["AreaUnidade"] = np.where(usa_betha, area_betha, area_geo)
+    df["AreaFonte"] = np.where(usa_betha, "BETHA", np.where(area_geo.notna(), "GEO", ""))
     if tipo == "territorial":
         df["AreaUnidade"] = np.nan
         edificado = para_numero(df["Valor_Venal_Edificacao_Atual"]).fillna(0) > 0
@@ -532,7 +533,7 @@ def montar_unidades(df, pri):
     u["Codigo"] = np.where(texto_id(u["Codigo"]) == "", "NOVA (in loco)", texto_id(u["Codigo"]))
     cb = u["Campos_Betha"].fillna("")
     u["Fonte"] = np.select(
-        [u["Origem"] == "BETHA", cb.str.contains("Area_Construida_Unidade_InLoco")],
+        [u["Origem"] == "BETHA", u["AreaFonte"] == "BETHA"],
         ["BETHA", "GEO (area da Betha)"], "GEO")
     mudou = (u["Padrao_Betha"].map(chave) != "") & (u["Padrao_Betha"].map(chave) != u["Padrao_Digitado"].map(chave))
     u.loc[mudou & (u["Fonte"] == "BETHA"), "Fonte"] = "BETHA (padrao do geo)"
@@ -567,7 +568,8 @@ def montar_unidades(df, pri):
         "Unidade": "Unidade", "Fonte": "Fonte",
         "Tipo_de_Material": "Material", "Tipo_de_Edificacao": "Tipo_Edificacao",
         "Padrao_Betha": "Padrao_Betha", "Padrao_Digitado": "Padrao_Calculo", "Uso_da_Edificacao": "Uso",
-        "Area_Betha": "Area_Betha", "AreaUnidade": "Area_Calculo", "VM2E": "Valor_m2_PGP",
+        "Area_Construida_Unidade_InLoco": "Area_Geo", "Area_Betha": "Area_Betha",
+        "AreaUnidade": "Area_Calculo", "AreaFonte": "Fonte_Area", "VM2E": "Valor_m2_PGP",
         "VVE-U": "VV_Edificacao", "Calculo_Edificacao": "Calculo_Edificacao",
         "AreaTerreno": "Area_Terreno", "ValorPgv": "Valor_m2_PGV", "VVT": "VV_Terreno",
         "Calculo_Terreno": "Calculo_Terreno", "VV_T": "VV_Imovel", "Calculo_VV_Imovel": "Calculo_VV_Imovel",
@@ -580,6 +582,8 @@ def montar_unidades(df, pri):
     u.loc[u["Linha"] != "TOTAL DO IMOVEL", ["VV_T", "UsoSimulacao", "Aliquota", "VI",
                                              "Calculo_VV_Imovel", "Calculo_Imposto", "Imposto_Betha"]] = np.nan
     u["Area_Betha"] = para_numero(u["Area_Betha"])
+    u["Area_Construida_Unidade_InLoco"] = para_numero(u["Area_Construida_Unidade_InLoco"])
+    u.loc[u["Linha"] == "TOTAL DO IMOVEL", ["Area_Construida_Unidade_InLoco", "AreaFonte"]] = np.nan
     return u[list(cols)].rename(columns=cols).reset_index(drop=True)
 
 

@@ -29,7 +29,7 @@ LOTE = 100  # ids por requisicao
 # todo ano: em geral o valor vigente esta em 2023 ou antes).
 CAMPOS_CADASTRO = {
     "Area_Terreno": (1062953, 1062934),            # Area Terreno; fallback Area Lote
-    "Area_Construida_Unidade_InLoco": (1062951,),  # Area Construida Unidade (cadastral)
+    "Area_Construida_Unidade": (1062951,),  # Area Construida Unidade (cadastral, Betha)
     "Tipo_de_Material": (1063000,),
     "Tipo_de_Edificacao": (1062962,),
     "Padrao_Digitado": (1062945,),
