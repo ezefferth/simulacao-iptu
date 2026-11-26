@@ -150,16 +150,15 @@ colunas do resultado. Sem esse arquivo, o simulador usa o layout padrão e mostr
 | `territorial` | Imóveis que deixaram de ter edificação (predial → territorial) | Cadastro e área do terreno | Campos vazios de cadastro/terreno e valores Anterior/Atual. **Edificação é ignorada**; alíquota da faixa `NAO EDIFICADO` |
 | `completa` | A planilha já traz **todas as unidades** do imóvel (aerolevantamento, novo padrão construtivo) | Tudo da construção (material, tipo, padrão, área in loco) | Só campos vazios de cadastro/terreno, `Uso_da_Edificacao` e valores Anterior/Atual |
 | `sem_unidades` | A planilha traz **só a unidade principal** | A principal | As **unidades subordinadas** ativas (`idImovelPrincipal`), com material, tipo, padrão, uso e área |
-| `novo_padrao` | A planilha traz **só a unidade principal com o padrão construtivo novo** | A principal e o `Padrao_Digitado` novo | Igual a `sem_unidades`; depois o **padrão da principal é aplicado em todas as unidades** do imóvel (o padrão anterior fica em `Observacoes`) |
+| `novo_padrao` | A planilha traz **só a unidade principal com o padrão construtivo novo** | A principal e o `Padrao_Digitado` novo | Igual a `sem_unidades`; depois o **padrão da principal é aplicado em todas as unidades** do imóvel (o padrão anterior fica em `Observacoes`) **Mistura fontes** (área/padrão da Betha): não usar com planilha do geo |
 
 Exemplo de planilhas reais e o tipo usado:
 
 | Planilha | Tipo | Observação |
 |---|---|---|
 | `1_territorial` | `territorial` | A inscrição atual é a `Inscricao_imobiliaria_InLoco` (termina em `.0`; terminava em `.1` quando era predial) |
-| `2_novo_padrao` | **`novo_padrao`** | Cada linha é a unidade **principal**, com o padrão novo e **sem área construída**. O simulador busca na Betha a área da principal e todas as demais unidades do imóvel, e aplica o padrão novo da principal em **todas as unidades**. Com `completa` o imóvel seria calculado sem edificação (alíquota de terreno) |
+| `2_novo_padrao` | `completa` | Cada linha é a unidade **principal** com o padrão novo do geo. Área, material, tipo, uso e padrão vêm **só do geo**: `Area_Construida_Unidade_InLoco` = 0 significa sem edificação (imposto só de terreno, faixa NAO EDIFICADO). Para calcular a construção, o geo precisa informar a área |
 
-**Padrão diferente por unidade (`novo_padrao`):** para dar padrões diferentes às unidades do mesmo imóvel, inclua na planilha **uma linha por unidade** (identificada pelo `Codigo` ou `ID` da unidade) com o seu `Padrao_Digitado` — ex.: a casa como `LUXO` e a edícula como `FINO`. O padrão informado na linha da unidade prevalece. O padrão da principal só é aplicado às unidades que **não estão na planilha** ou que estão com o padrão **vazio**. A saída continua com uma linha por imóvel principal.
 | `3_edificacoes` | `completa` | `Inscricao_imobiliaria` é a inscrição englobada da principal e se repete nas unidades; `Inscricao_imobiliaria_InLoco` identifica as **unidades novas** achadas em campo, ainda sem código/ID no sistema |
 
 ---
@@ -188,11 +187,25 @@ Aceita `.xlsx` ou `.csv`.
 | `Secao` | Seção de logradouro (chave da PGV) |
 | `Tipo_de_Edificacao`, `Tipo_de_Material`, `Padrao_Digitado` | Chave da PGP |
 | `Uso_da_Edificacao` | Faixa de alíquota |
-| `Area_Construida_Unidade_InLoco` | Área construída da unidade (m²). **Vazio ou `0` = não medida**: vale a `Area_Construida_Unidade` da planilha ou a área da Betha |
+| `Area_Construida_Unidade_InLoco` | Área construída da unidade (m²), **do geo**. Vale como está, inclusive `0` (ex.: era construído e virou terreno). Nunca é trocada pela área da Betha |
 | `Area_Terreno` | Área do terreno (m²), da unidade principal |
 | `Valor_Venal_Terreno_Anterior/Atual`, `Valor_Venal_Edificacao_Anterior/Atual`, `Valor_Venal_Total_Imovel_Anterior/Atual`, `Valor_Aliquota_Anterior/Atual`, `Valor_Imposto_Anterior/Atual` | Valores lançados (completados pela Betha se vazios) |
 | `Nome_Proprietario`, `Cpf_Cnpj`, `Bairro`, `Tipo`, `Situacao`, `Taxacao`, `Numero_de_Pavimentos`, `Classificacao`, `Patrimonio`, `Tipo_de_Imposto`, `Atualizacao_Aerolevantamento`, `Area_Edificada_Total`, `Area_Construida_Obras`, `Ano` | Informativos, repassados para a saída |
-| `Area_Construida_Unidade` | Área cadastral; usada quando `..._InLoco` está vazia ou `0` |
+| `Area_Construida_Unidade` | Área cadastral (Betha), só informativa. Entra no cálculo apenas quando a entrada **não tem** a coluna `..._InLoco` (CSV do relatório Groovy, só Betha) |
+
+### Fonte de cada coluna: não misturar
+
+| Fonte | Colunas | No cálculo |
+|---|---|---|
+| **Geo** (levantamento in loco) | `Inscricao_imobiliaria_InLoco`, `Unidade`, `Tipo_de_Edificacao`, `Tipo_de_Material`, `Uso_da_Edificacao`, `Area_Construida_Unidade_InLoco`, `Padrao_Digitado` | Edificação e alíquota. É a verdade: **a Betha nunca completa nem substitui** |
+| **Betha** | todas as demais (ID, código, inscrição, seção, proprietário, `Area_Terreno`, `Area_Construida_Unidade`, valores anterior/atual...) | Terreno e comparação. Campo vazio é completado pela Betha |
+
+```
+IPTU                      = Valor Venal do Imóvel x alíquota
+Valor Venal do Imóvel     = Valor Venal do Terreno + Valor Venal da Edificação
+Valor Venal do Terreno    = Area_Terreno (Betha) x PGV
+Valor Venal da Edificação = Area_Construida_Unidade_InLoco (geo) x PGP (material/tipo/padrão do geo)
+```
 
 ### 6.2 Como as linhas viram imóveis
 
@@ -220,14 +233,15 @@ Aceita `.xlsx` ou `.csv`.
 python simulacaoIPTU.py
 ```
 
-> O novo padrão **tem** que rodar como `novo_padrao`. Rodado como `completa`, a
-> edificação sai zerada e o imposto fica só de terreno, um valor alto e errado.
+> As três rodam com a construção **só do geo**: territorial como `territorial`, novo
+> padrão e edificações como `completa`. Os tipos `sem_unidades`/`novo_padrao` buscam
+> unidades com área e padrão da Betha (misturam as fontes): não usar com planilha do geo.
 
 Para rodar um arquivo por vez, execute **dentro da pasta do projeto** (onde estão `pgv/pgp/aliquota`):
 
 ```bash
 python simulacaoIPTU.py --tipo territorial --entrada entradas/1_territorial.xlsx --saida 1_territorial_SIMULADO.xlsx
-python simulacaoIPTU.py --tipo novo_padrao  --entrada entradas/2_novo_padrao.xlsx --saida 2_novo_padrao_SIMULADO.xlsx
+python simulacaoIPTU.py --tipo completa    --entrada entradas/2_novo_padrao.xlsx --saida 2_novo_padrao_SIMULADO.xlsx
 python simulacaoIPTU.py --tipo completa    --entrada entradas/3_edificacoes.xlsx --saida 3_edificacoes_SIMULADO.xlsx
 ```
 

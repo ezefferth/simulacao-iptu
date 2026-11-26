@@ -63,8 +63,17 @@ COLUNAS_SAIDA = [
     "Qtd_Unidades", "Observacoes",
 ]
 
-# Campos que a Betha pode completar, por tipo de planilha
-CAMPOS_CADASTRO = ["Inscricao_imobiliaria", "Secao", "Codigo", "Unidade", "Bairro", "Tipo",
+# Fonte de cada coluna - NAO MISTURAR (regra do usuario, 26/11/2026):
+#   GEO   = o que o levantamento in loco identificou; e a verdade e a Betha nunca completa.
+#           Preenchida (inclusive 0) vale como esta; vazia = sem informacao do geo.
+#   BETHA = todo o resto (cadastro, terreno, valores lancados).
+# IPTU = VV_Imovel x aliquota ; VV_Imovel = VVT + VVE
+#   VVT = Area_Terreno (Betha) x PGV ; VVE = Area_Construida_Unidade_InLoco (geo) x PGP (geo)
+CAMPOS_GEO = ["Inscricao_imobiliaria_InLoco", "Unidade", "Tipo_de_Edificacao", "Tipo_de_Material",
+              "Uso_da_Edificacao", "Area_Construida_Unidade_InLoco", "Padrao_Digitado"]
+
+# Campos que a Betha pode completar, por tipo de planilha (nunca os do geo)
+CAMPOS_CADASTRO = ["Inscricao_imobiliaria", "Secao", "Codigo", "Bairro", "Tipo",
                    "Situacao", "Nome_Proprietario", "Cpf_Cnpj", "Area_Terreno", "Taxacao",
                    "Tipo_de_Imposto", "Classificacao", "Patrimonio", "Numero_de_Pavimentos",
                    "Area_Edificada_Total", "Atualizacao_Aerolevantamento"]
@@ -75,7 +84,9 @@ CAMPOS_CONSTRUCAO = ["Tipo_de_Material", "Tipo_de_Edificacao", "Padrao_Digitado"
                      "Area_Construida_Unidade_InLoco"]
 PREENCHE = {
     "territorial": CAMPOS_CADASTRO + CAMPOS_VALORES,
-    "completa": CAMPOS_CADASTRO + CAMPOS_VALORES + ["Uso_da_Edificacao"],
+    "completa": CAMPOS_CADASTRO + CAMPOS_VALORES,
+    # sem_unidades/novo_padrao trazem a construcao da Betha (mistura as fontes): nao usar
+    # com as planilhas do geo; ficam so para planilha que nao tem levantamento in loco
     "sem_unidades": CAMPOS_CADASTRO + CAMPOS_VALORES + ["Uso_da_Edificacao"] + CAMPOS_CONSTRUCAO,
 }
 PREENCHE["novo_padrao"] = PREENCHE["sem_unidades"]
@@ -149,19 +160,17 @@ def ler_entrada(caminho):
     df = df.dropna(how="all").reset_index(drop=True)
     if "ID_Principal" not in df.columns and "Codigo_Principal" in df.columns:
         df = df.rename(columns={"Codigo_Principal": "ID_Principal"})  # layout anterior
+    # Entrada so da Betha (CSV do relatorio Groovy, sem coluna do geo): a area e a cadastral.
+    # Nao mistura: o arquivo inteiro e Betha.
+    if "Area_Construida_Unidade_InLoco" not in df.columns and "Area_Construida_Unidade" in df.columns:
+        df["Area_Construida_Unidade_InLoco"] = df["Area_Construida_Unidade"]
     for c in COLUNAS_SAIDA:
         if c not in df.columns:
             df[c] = np.nan
     df = df.astype(object)
-    # Area InLoco 0 = nao medida (planilhas do novo padrao/territorial vem com 0): trata
-    # como vazia, para valer a area cadastral (Area_Construida_Unidade ou a da Betha).
-    # Sem isso a principal entra sem edificacao.
-    zero = para_numero(df["Area_Construida_Unidade_InLoco"]).fillna(1) == 0
-    df.loc[zero, "Area_Construida_Unidade_InLoco"] = np.nan
-    # Relatorio Betha (CAMPOS_SCRIPT-betha) traz a area cadastral em Area_Construida_Unidade
-    if "Area_Construida_Unidade" in df.columns:
-        vaz = df["Area_Construida_Unidade_InLoco"].map(vazio)
-        df.loc[vaz, "Area_Construida_Unidade_InLoco"] = df.loc[vaz, "Area_Construida_Unidade"]
+    # Area_Construida_Unidade_InLoco e do geo: vale como esta (inclusive 0, ex.: era
+    # construido e virou terreno). Area_Construida_Unidade e da Betha: so informativa,
+    # nunca substitui a do geo no calculo.
     for c in CAMPOS_COM_CODIGO:
         df[c] = df[c].map(sem_prefixo)
     df["ID"] = texto_id(df["ID"])
@@ -482,7 +491,7 @@ def main():
 
 PLAY = (  # (nome, tipo, arquivo em entradas/ sem .xlsx)
     ("Territorial", "territorial", "1_territorial"),
-    ("Novo padrao", "novo_padrao", "2_novo_padrao"),  # NAO e "completa": sem area, sairia so terreno
+    ("Novo padrao", "completa", "2_novo_padrao"),  # construcao so do geo (nao misturar)
     ("Edificacoes", "completa", "3_edificacoes"),
 )
 
